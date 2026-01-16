@@ -139,8 +139,9 @@ def generate_invoice_a5(data):
     pdf.cell(100, 7, "EQUIVALENT EURO", align='R')
     pdf.cell(28, 7, f"{total_final/TAUX_AR_TO_EUR:,.2f}", border=1, align='R')
     
-    # Correction pour Streamlit Cloud : pdf.output() retourne directement des bytes
-    return pdf.output()
+    # --- CORRECTION ICI ---
+    # Conversion explicite en bytes pour Streamlit
+    return bytes(pdf.output())
 
 # ==========================================
 # 3. INTERFACE STREAMLIT
@@ -194,6 +195,7 @@ with col3:
     
     if st.checkbox("Porteur"):
         nb_p = st.number_input("Nombre de porteurs", min_value=1, value=1)
+        # Calcul : Prix * Nombre porteur * Jours
         m_p = data_c["porteur_par_j_pers"] * nb_p * jours
         items_facture.append((f"Porteur ({nb_p})", nb_p, m_p))
         total_brut += m_p
@@ -206,23 +208,34 @@ with col3:
 # --- GÉNÉRATION ---
 st.divider()
 total_marge_ar = total_brut * (1 + marge/100)
-st.metric("Total avec Marge", f"{total_marge_ar:,.0f} Ar ({total_marge_ar/TAUX_AR_TO_EUR:,.2f} €)")
+st.metric("Total estimé", f"{total_marge_ar:,.0f} Ar")
 
 if st.button("💾 GÉNÉRER LA FACTURE A5"):
     if not nom_client:
         st.error("Veuillez saisir le nom du client.")
     else:
-        doc_data = {
-            "ref": f"LMT-{datetime.now().strftime('%y%m%d%H%M')}",
-            "date": datetime.now().strftime("%d/%m/%Y"),
-            "client": nom_client,
-            "pax": pax,
-            "jours": jours,
-            "d_deb": d_debut, "d_fin": d_fin,
-            "items": items_facture,
-            "total_ar": total_brut,
-            "marge": marge
-        }
-        # La nouvelle version de fpdf2 renvoie des bytes directement
-        pdf_bytes = generate_invoice_a5(doc_data)
-        st.download_button("📥 Télécharger PDF", pdf_bytes, f"Facture_{nom_client}.pdf", "application/pdf")
+        try:
+            doc_data = {
+                "ref": f"LMT-{datetime.now().strftime('%y%m%d%H%M')}",
+                "date": datetime.now().strftime("%d/%m/%Y"),
+                "client": nom_client,
+                "pax": pax,
+                "jours": jours,
+                "d_deb": d_debut, "d_fin": d_fin,
+                "items": items_facture,
+                "total_ar": total_brut,
+                "marge": marge
+            }
+            
+            # Appel de la fonction et conversion forcée
+            pdf_output = generate_invoice_a5(doc_data)
+            
+            st.download_button(
+                label="📥 Télécharger la Facture PDF",
+                data=pdf_output,
+                file_name=f"Facture_{nom_client}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf"
+            )
+            st.success("Facture générée avec succès !")
+        except Exception as e:
+            st.error(f"Erreur lors de la génération : {str(e)}")
