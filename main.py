@@ -49,14 +49,18 @@ TARIFS = {
 }
 
 # ==========================================
-# 2. MOTEUR PDF FORMAT A5 AVEC LOGO & QR
+# 2. MOTEUR PDF FORMAT A5
 # ==========================================
 class PDF_A5(FPDF):
     def header(self):
-        # Insertion du LOGO (si le fichier existe)
+        # LOGO AU MILIEU (Si logo.png existe)
         if os.path.exists("logo.png"):
-            self.image("logo.png", 10, 8, 20) # x, y, largeur
-        
+            # Calcul pour centrer : (Largeur A5 148mm - Largeur image 30mm) / 2 = 59mm
+            self.image("logo.png", x=59, y=8, w=30)
+            self.ln(25) # Saut de ligne après le logo pour laisser de la place
+        else:
+            self.ln(5)
+            
         self.set_font("Helvetica", 'B', 14)
         self.cell(0, 8, "LEMUR MACACO TOURS SARL", ln=True, align='C')
         self.set_font("Helvetica", '', 8)
@@ -67,7 +71,6 @@ class PDF_A5(FPDF):
     def footer(self):
         self.set_y(-35)
         self.set_font("Helvetica", 'B', 8)
-        # Position du texte à côté du QR Code
         self.set_x(40) 
         self.cell(0, 5, "COORDONNEES BANCAIRES", ln=True)
         self.set_font("Helvetica", '', 7)
@@ -80,7 +83,6 @@ def generate_invoice_a5(data):
     pdf = PDF_A5(format='A5')
     pdf.add_page()
     
-    # Infos Facture
     pdf.set_font("Helvetica", 'B', 10)
     pdf.cell(0, 8, f"FACTURE : {data['ref']}", ln=True)
     pdf.set_font("Helvetica", '', 9)
@@ -105,32 +107,31 @@ def generate_invoice_a5(data):
     pdf.ln()
 
     pdf.set_font("Helvetica", '', 7)
-    # Remplissage dynamique du tableau (Sites, Guides, Services...)
     for desc, nb, mt in data['items']:
         pdf.cell(85, 6, f" {desc}", border=1)
         pdf.cell(15, 6, str(nb), border=1, align='C')
         pdf.cell(28, 6, f"{mt:,.0f}", border=1, align='R')
         pdf.ln()
 
-    # TOTAUX
+    # TOTAL NET
     total_final = data['total_ar'] * (1 + data['marge'] / 100)
     pdf.ln(3)
     pdf.set_font("Helvetica", 'B', 10)
     pdf.cell(100, 7, "TOTAL NET", align='R')
     pdf.cell(28, 7, f"{total_final:,.0f} Ar", border=1, align='R')
+    
+    # EQUIVALENT EURO EN BLEU
     pdf.ln()
-    pdf.set_text_color(200, 0, 0)
+    pdf.set_text_color(0, 0, 255) # Bleu (R, G, B)
     pdf.cell(100, 7, "EQUIVALENT EURO", align='R')
     pdf.cell(28, 7, f"{total_final/TAUX_AR_TO_EUR:,.2f} EUR", border=1, align='R')
-    pdf.set_text_color(0, 0, 0)
+    pdf.set_text_color(0, 0, 0) # Retour au noir
 
-    # GENERATION DU QR CODE
+    # QR CODE
     qr_content = f"Facture LMT: {data['ref']}\nClient: {data['client']}\nTotal: {total_final:,.0f} Ar\nDates: {d_deb} au {d_fin}"
     qr = qrcode.make(qr_content)
     qr_path = "temp_qr.png"
     qr.save(qr_path)
-    
-    # Insertion du QR CODE en bas à gauche
     pdf.image(qr_path, 10, 175, 25, 25) 
     
     return bytes(pdf.output())
@@ -144,7 +145,7 @@ with st.sidebar:
     st.header("👤 Client & Dates")
     nom_client = st.text_input("Nom du Client")
     c1, c2 = st.columns(2)
-    d_deb = c1.date_input("Du", value=date(2026, 2, 25))
+    d_debut = c1.date_input("Du", value=date(2026, 2, 25))
     d_fin = c2.date_input("Au", value=date(2026, 2, 28))
     pax = st.number_input("Nombre de Pax", min_value=1, value=2)
     jours = st.number_input("Nombre de Jours", min_value=1, value=1)
@@ -187,10 +188,20 @@ with col3:
         items_facture.append((f"Porteur ({nb_p})", nb_p, m_p))
         total_brut += m_p
     if st.checkbox("Carburant"):
-        items_facture.append(("Carburant", 1, data_c["fixes"]["Carburant"]))
-        total_brut += data_c["fixes"]["Carburant"]
+        val_carb = data_c["fixes"]["Carburant"]
+        items_facture.append(("Carburant", 1, val_carb))
+        total_brut += val_carb
 
-if st.button("💾 GÉNÉRER LA FACTURE A5"):
+# --- TOTAUX INTERFACE ---
+st.divider()
+total_avec_marge = total_brut * (1 + marge / 100)
+
+res1, res2, res3 = st.columns(3)
+res1.metric("Total Brut", f"{total_brut:,.0f} Ar")
+res2.metric("TOTAL NET", f"{total_avec_marge:,.0f} Ar")
+res3.metric("EURO", f"{total_avec_marge/TAUX_AR_TO_EUR:,.2f} €")
+
+if st.button("💾 GÉNÉRER LA FACTURE PDF"):
     if not nom_client:
         st.error("Nom du client requis.")
     else:
@@ -198,7 +209,7 @@ if st.button("💾 GÉNÉRER LA FACTURE A5"):
             "ref": f"LMT-{datetime.now().strftime('%y%m%d%H%M')}",
             "date": datetime.now().strftime("%d/%m/%Y"),
             "client": nom_client, "pax": pax, "jours": jours,
-            "d_deb": d_deb, "d_fin": d_fin,
+            "d_deb": d_debut, "d_fin": d_fin,
             "items": items_facture, "total_ar": total_brut, "marge": marge
         }
         pdf_bytes = generate_invoice_a5(doc_data)
