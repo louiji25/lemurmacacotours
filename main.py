@@ -198,7 +198,7 @@ total_avec_marge = total_brut * (1 + marge / 100)
 
 res1, res2, res3 = st.columns(3)
 res1.metric("Total Brut", f"{total_brut:,.0f} Ar")
-res2.metric("TOTAL NET", f"{total_avec_marge:,.0f} Ar")
+res2.metric("TOTAL NET (+ Marge)", f"{total_avec_marge:,.0f} Ar")
 res3.metric("EURO", f"{total_avec_marge/TAUX_AR_TO_EUR:,.2f} €")
 
 if st.button("💾 GÉNÉRER LA FACTURE PDF"):
@@ -214,3 +214,4 @@ if st.button("💾 GÉNÉRER LA FACTURE PDF"):
         }
         pdf_bytes = generate_invoice_a5(doc_data)
         st.download_button("📥 Télécharger PDF", pdf_bytes, f"Facture_{nom_client}.pdf", "application/pdf")
+
