@@ -8,7 +8,7 @@ import io
 # ==========================================
 # 1. CONFIGURATION & TARIFS
 # ==========================================
-st.set_page_config(page_title="LMT Billing System - A5", layout="wide")
+st.set_page_config(page_title="LMT Facturation System", layout="wide")
 
 TAUX_AR_TO_EUR = 5000 
 
@@ -144,7 +144,7 @@ def generate_invoice_a5(data):
 # ==========================================
 # 3. INTERFACE STREAMLIT
 # ==========================================
-st.title("📄 LMT - Facturation A5")
+st.title("📄 LMT - Facturation")
 
 with st.sidebar:
     st.header("👤 Client & Dates")
@@ -229,4 +229,5 @@ if st.button("💾 GÉNÉRER LA FACTURE A5"):
             "marge": marge
         }
         pdf_out = generate_invoice_a5(doc_data)
+
         st.download_button("📥 Télécharger PDF", pdf_out, f"Facture_{nom_client}.pdf", "application/pdf")
