@@ -3,12 +3,11 @@ import pandas as pd
 import os
 from fpdf import FPDF
 from datetime import datetime, date
-import io
 
 # ==========================================
 # 1. CONFIGURATION & TARIFS
 # ==========================================
-st.set_page_config(page_title="LMT Facturation System", layout="wide")
+st.set_page_config(page_title="LMT Billing System - A5", layout="wide")
 
 TAUX_AR_TO_EUR = 5000 
 
@@ -26,11 +25,11 @@ TARIFS = {
         },
         "services_jour": {
             "Location Voiture": 200000, "Guide accompagnateur": 150000, "Chauffeur": 30000,
-            "Cuisinier": 30000
+            "Cuisinier": 50000
         },
         "fixes": {"Carburant": 500000},
         "restau_pax_jour": 40000,
-        "porteur_jour_pax": 10000  # Tarif exemple par porteur/jour/pax
+        "porteur_par_j_pers": 20000 
     },
     "Circuit Nord-Est": {
         "entrees": {"Andapa (Marojejy)": 140000},
@@ -40,11 +39,11 @@ TARIFS = {
         },
         "services_jour": {
             "Location Voiture": 300000, "Guide accompagnateur": 150000, "Chauffeur": 40000,
-            "Cuisinier": 30000
+            "Cuisinier": 60000
         },
         "fixes": {"Carburant": 1200000},
         "restau_pax_jour": 40000,
-        "porteur_jour_pax": 10000
+        "porteur_par_j_pers": 25000
     }
 }
 
@@ -79,10 +78,10 @@ def generate_invoice_a5(data):
     pdf.cell(0, 5, f"Nombre de personne (Pax) : {data['pax']}", ln=True)
     pdf.cell(0, 5, f"Nombre de jours : {data['jours']}", ln=True)
     
-    date_deb = data['d_deb'].strftime("%d-%m-%Y")
-    date_fin = data['d_fin'].strftime("%d-%m-%Y")
+    d_deb = data['d_deb'].strftime("%d-%m-%Y")
+    d_fin = data['d_fin'].strftime("%d-%m-%Y")
     pdf.set_font("Helvetica", 'I', 9)
-    pdf.cell(0, 5, f"Date de réservation : du {date_deb} au {date_fin}", ln=True)
+    pdf.cell(0, 5, f"Date de réservation : du {d_deb} au {d_fin}", ln=True)
     
     pdf.set_font("Helvetica", '', 9)
     pdf.cell(0, 5, f"Client : {data['client'].upper()}", ln=True)
@@ -106,7 +105,7 @@ def generate_invoice_a5(data):
         y_end = pdf.get_y()
         pdf.set_xy(95, y_end - 5 if len(noms) <= 3 else y_end - 10)
         pdf.cell(15, 5 if len(noms) <= 3 else 10, str(len(noms)), border=1, align='C')
-        pdf.cell(28, 5 if len(noms) <= 3 else 10, f"{sum(i[1] for i in sites_items):,.0f}", border=1, align='R')
+        pdf.cell(28, 5 if len(noms) <= 3 else 10, f"{sum(i[2] for i in sites_items):,.0f}", border=1, align='R')
         pdf.set_xy(10, y_end)
 
     # 2. Bloc GUIDES
@@ -117,7 +116,7 @@ def generate_invoice_a5(data):
         y_end_g = pdf.get_y()
         pdf.set_xy(95, y_end_g - 5 if len(noms_g) <= 3 else y_end_g - 10)
         pdf.cell(15, 5 if len(noms_g) <= 3 else 10, str(len(noms_g)), border=1, align='C')
-        pdf.cell(28, 5 if len(noms_g) <= 3 else 10, f"{sum(i[1] for i in guides_items):,.0f}", border=1, align='R')
+        pdf.cell(28, 5 if len(noms_g) <= 3 else 10, f"{sum(i[2] for i in guides_items):,.0f}", border=1, align='R')
         pdf.set_xy(10, y_end_g)
 
     # 3. Autres Services
@@ -135,21 +134,22 @@ def generate_invoice_a5(data):
     pdf.cell(100, 7, "TOTAL NET", align='R')
     pdf.cell(28, 7, f"{total_final:,.0f}", border=1, align='R')
     pdf.ln()
+    pdf.set_font("Helvetica", 'B', 9)
     pdf.set_text_color(200, 0, 0)
     pdf.cell(100, 7, "EQUIVALENT EURO", align='R')
     pdf.cell(28, 7, f"{total_final/TAUX_AR_TO_EUR:,.2f}", border=1, align='R')
     
-    return pdf.output(dest='S').encode('latin-1')
+    # Correction pour Streamlit Cloud : pdf.output() retourne directement des bytes
+    return pdf.output()
 
 # ==========================================
 # 3. INTERFACE STREAMLIT
 # ==========================================
-st.title("📄 LMT - Facturation")
+st.title("📄 LMT - Facturation A5")
 
 with st.sidebar:
     st.header("👤 Client & Dates")
     nom_client = st.text_input("Nom du Client")
-    
     col_d1, col_d2 = st.columns(2)
     with col_d1:
         d_debut = st.date_input("Du", value=date(2026, 2, 25))
@@ -173,7 +173,6 @@ with col1:
         if st.checkbox(s, key=f"s_{s}"):
             items_facture.append((f"Entree {s}", pax, p * pax))
             total_brut += p * pax
-    
     if st.checkbox("Restaurant", value=True):
         m_r = data_c["restau_pax_jour"] * pax * jours
         items_facture.append((f"Restaurant ({jours}j x {pax}pax)", 1, m_r))
@@ -193,24 +192,21 @@ with col3:
             items_facture.append((f"{s}", 1, p * jours))
             total_brut += p * jours
     
-    # Section Porteur dynamique
     if st.checkbox("Porteur"):
-        nb_porteurs = st.number_input("Nombre de porteurs", min_value=1, value=1)
-        m_porteur = data_c["porteur_jour_pax"] * nb_porteurs * jours * pax
-        items_facture.append((f"Porteur ({nb_porteurs})", nb_porteurs, m_porteur))
-        total_brut += m_porteur
+        nb_p = st.number_input("Nombre de porteurs", min_value=1, value=1)
+        m_p = data_c["porteur_par_j_pers"] * nb_p * jours
+        items_facture.append((f"Porteur ({nb_p})", nb_p, m_p))
+        total_brut += m_p
 
     if st.checkbox("Carburant"):
         p_c = data_c["fixes"]["Carburant"]
         items_facture.append(("Carburant", 1, p_c))
         total_brut += p_c
 
-# --- RÉCAPITULATIF ---
+# --- GÉNÉRATION ---
 st.divider()
 total_marge_ar = total_brut * (1 + marge/100)
-c_res1, c_res2 = st.columns(2)
-c_res1.metric("Total avec Marge (Ar)", f"{total_marge_ar:,.0f} Ar")
-c_res2.metric("Total en Euro (€)", f"{total_marge_ar/TAUX_AR_TO_EUR:,.2f} €")
+st.metric("Total avec Marge", f"{total_marge_ar:,.0f} Ar ({total_marge_ar/TAUX_AR_TO_EUR:,.2f} €)")
 
 if st.button("💾 GÉNÉRER LA FACTURE A5"):
     if not nom_client:
@@ -222,12 +218,11 @@ if st.button("💾 GÉNÉRER LA FACTURE A5"):
             "client": nom_client,
             "pax": pax,
             "jours": jours,
-            "d_deb": d_debut,
-            "d_fin": d_fin,
+            "d_deb": d_debut, "d_fin": d_fin,
             "items": items_facture,
             "total_ar": total_brut,
             "marge": marge
         }
-        pdf_out = generate_invoice_a5(doc_data)
-
-        st.download_button("📥 Télécharger PDF", pdf_out, f"Facture_{nom_client}.pdf", "application/pdf")
+        # La nouvelle version de fpdf2 renvoie des bytes directement
+        pdf_bytes = generate_invoice_a5(doc_data)
+        st.download_button("📥 Télécharger PDF", pdf_bytes, f"Facture_{nom_client}.pdf", "application/pdf")
