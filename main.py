@@ -8,7 +8,7 @@ import qrcode
 # ==========================================
 # 1. CONFIGURATION & TARIFS
 # ==========================================
-st.set_page_config(page_title="LMT Billing System - A4", layout="wide")
+st.set_page_config(page_title="LMT Facturation System", layout="wide")
 TAUX_AR_TO_EUR = 5000 
 
 TARIFS = {
@@ -162,7 +162,7 @@ def generate_invoice_a4(data):
 # ==========================================
 # 3. INTERFACE STREAMLIT
 # ==========================================
-st.title("📂 LMT - Facturation Professionnelle A4")
+st.title("📂 LMT - Facturation")
 
 with st.sidebar:
     st.header("👤 Client & Dates")
@@ -250,3 +250,4 @@ with btn_col2:
             }
             pdf_bytes = generate_invoice_a4(doc_data)
             st.download_button("📥 Télécharger PDF A4", pdf_bytes, f"Facture_{nom_client}_A4.pdf")
+
