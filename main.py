@@ -226,7 +226,7 @@ st.divider()
 total_avec_marge = total_brut * (1 + marge / 100)
 c1, c2, c3 = st.columns(3)
 c1.metric("Total Brut", f"{total_brut:,.0f} Ar")
-c2.metric("TOTAL NET", f"{total_avec_marge:,.0f} Ar")
+c2.metric("TOTAL NET (+Marge)", f"{total_avec_marge:,.0f} Ar")
 c3.metric("EURO", f"{total_avec_marge/TAUX_AR_TO_EUR:,.2f} €")
 
 # Zone des boutons côte à côte
@@ -250,4 +250,5 @@ with btn_col2:
             }
             pdf_bytes = generate_invoice_a4(doc_data)
             st.download_button("📥 Télécharger PDF A4", pdf_bytes, f"Facture_{nom_client}_A4.pdf")
+
 
