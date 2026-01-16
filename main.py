@@ -3,12 +3,13 @@ import pandas as pd
 import os
 from fpdf import FPDF
 from datetime import datetime, date
+import qrcode
+from io import BytesIO
 
 # ==========================================
 # 1. CONFIGURATION & TARIFS
 # ==========================================
 st.set_page_config(page_title="LMT Billing System - A5", layout="wide")
-
 TAUX_AR_TO_EUR = 5000 
 
 TARIFS = {
@@ -48,31 +49,40 @@ TARIFS = {
 }
 
 # ==========================================
-# 2. MOTEUR PDF FORMAT A5
+# 2. MOTEUR PDF FORMAT A5 AVEC LOGO & QR
 # ==========================================
 class PDF_A5(FPDF):
     def header(self):
+        # Insertion du LOGO (si le fichier existe)
+        if os.path.exists("logo.png"):
+            self.image("logo.png", 10, 8, 20) # x, y, largeur
+        
         self.set_font("Helvetica", 'B', 14)
         self.cell(0, 8, "LEMUR MACACO TOURS SARL", ln=True, align='C')
         self.set_font("Helvetica", '', 8)
         self.cell(0, 4, "NIF: 4019433197 | STAT: 79120 71 2025 0 10965", ln=True, align='C')
         self.cell(0, 4, "Andrekareka - Hell Ville - Nosy Be | Madagascar", ln=True, align='C')
-        self.ln(5)
+        self.ln(10)
 
     def footer(self):
-        self.set_y(-30)
+        self.set_y(-35)
         self.set_font("Helvetica", 'B', 8)
+        # Position du texte à côté du QR Code
+        self.set_x(40) 
         self.cell(0, 5, "COORDONNEES BANCAIRES", ln=True)
         self.set_font("Helvetica", '', 7)
+        self.set_x(40)
         self.cell(0, 4, "BMOI - RIB : MG46 0000 4000 2605 8277 2010 129", ln=True)
+        self.set_x(40)
         self.cell(0, 4, "SWIFT : BMOIMGMG", ln=True)
 
 def generate_invoice_a5(data):
     pdf = PDF_A5(format='A5')
     pdf.add_page()
+    
+    # Infos Facture
     pdf.set_font("Helvetica", 'B', 10)
     pdf.cell(0, 8, f"FACTURE : {data['ref']}", ln=True)
-    
     pdf.set_font("Helvetica", '', 9)
     pdf.cell(0, 5, f"Date de facture : {data['date']}", ln=True)
     pdf.cell(0, 5, f"Nombre de personne (Pax) : {data['pax']}", ln=True)
@@ -82,12 +92,11 @@ def generate_invoice_a5(data):
     d_fin = data['d_fin'].strftime("%d-%m-%Y")
     pdf.set_font("Helvetica", 'I', 9)
     pdf.cell(0, 5, f"Date de réservation : du {d_deb} au {d_fin}", ln=True)
-    
     pdf.set_font("Helvetica", '', 9)
     pdf.cell(0, 5, f"Client : {data['client'].upper()}", ln=True)
     pdf.ln(4)
 
-    # Entête Tableau
+    # TABLEAU
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Helvetica", 'B', 8)
     pdf.cell(85, 8, " Description", border=1, fill=True)
@@ -96,67 +105,47 @@ def generate_invoice_a5(data):
     pdf.ln()
 
     pdf.set_font("Helvetica", '', 7)
-    
-    # 1. Bloc SITES
-    sites_items = [item for item in data['items'] if "Entree" in item[0]]
-    if sites_items:
-        noms = [item[0].replace("Entree ", "") for item in sites_items]
-        pdf.multi_cell(85, 5, "Sites : " + " - ".join(noms), border='LTB')
-        y_end = pdf.get_y()
-        pdf.set_xy(95, y_end - 5 if len(noms) <= 3 else y_end - 10)
-        pdf.cell(15, 5 if len(noms) <= 3 else 10, str(len(noms)), border=1, align='C')
-        pdf.cell(28, 5 if len(noms) <= 3 else 10, f"{sum(i[2] for i in sites_items):,.0f}", border=1, align='R')
-        pdf.set_xy(10, y_end)
-
-    # 2. Bloc GUIDES
-    guides_items = [item for item in data['items'] if "Guide local" in item[0]]
-    if guides_items:
-        noms_g = [item[0].replace("Guide local ", "") for item in guides_items]
-        pdf.multi_cell(85, 5, "Guides : " + " - ".join(noms_g), border='LTB')
-        y_end_g = pdf.get_y()
-        pdf.set_xy(95, y_end_g - 5 if len(noms_g) <= 3 else y_end_g - 10)
-        pdf.cell(15, 5 if len(noms_g) <= 3 else 10, str(len(noms_g)), border=1, align='C')
-        pdf.cell(28, 5 if len(noms_g) <= 3 else 10, f"{sum(i[2] for i in guides_items):,.0f}", border=1, align='R')
-        pdf.set_xy(10, y_end_g)
-
-    # 3. Autres Services
-    autres = [item for item in data['items'] if "Entree" not in item[0] and "Guide local" not in item[0]]
-    for desc, nombre, montant in autres:
+    # Remplissage dynamique du tableau (Sites, Guides, Services...)
+    for desc, nb, mt in data['items']:
         pdf.cell(85, 6, f" {desc}", border=1)
-        pdf.cell(15, 6, str(nombre), border=1, align='C')
-        pdf.cell(28, 6, f"{montant:,.0f}", border=1, align='R')
+        pdf.cell(15, 6, str(nb), border=1, align='C')
+        pdf.cell(28, 6, f"{mt:,.0f}", border=1, align='R')
         pdf.ln()
 
-    # Totaux
+    # TOTAUX
     total_final = data['total_ar'] * (1 + data['marge'] / 100)
     pdf.ln(3)
-    pdf.set_font("Helvetica", 'B', 9)
+    pdf.set_font("Helvetica", 'B', 10)
     pdf.cell(100, 7, "TOTAL NET", align='R')
-    pdf.cell(28, 7, f"{total_final:,.0f}", border=1, align='R')
+    pdf.cell(28, 7, f"{total_final:,.0f} Ar", border=1, align='R')
     pdf.ln()
-    pdf.set_font("Helvetica", 'B', 9)
     pdf.set_text_color(200, 0, 0)
     pdf.cell(100, 7, "EQUIVALENT EURO", align='R')
-    pdf.cell(28, 7, f"{total_final/TAUX_AR_TO_EUR:,.2f}", border=1, align='R')
+    pdf.cell(28, 7, f"{total_final/TAUX_AR_TO_EUR:,.2f} EUR", border=1, align='R')
+    pdf.set_text_color(0, 0, 0)
+
+    # GENERATION DU QR CODE
+    qr_content = f"Facture LMT: {data['ref']}\nClient: {data['client']}\nTotal: {total_final:,.0f} Ar\nDates: {d_deb} au {d_fin}"
+    qr = qrcode.make(qr_content)
+    qr_path = "temp_qr.png"
+    qr.save(qr_path)
     
-    # --- CORRECTION ICI ---
-    # Conversion explicite en bytes pour Streamlit
+    # Insertion du QR CODE en bas à gauche
+    pdf.image(qr_path, 10, 175, 25, 25) 
+    
     return bytes(pdf.output())
 
 # ==========================================
 # 3. INTERFACE STREAMLIT
 # ==========================================
-st.title("📄 LMT - Facturation A5")
+st.title("📄 LMT - Facturation Professionnelle A5")
 
 with st.sidebar:
     st.header("👤 Client & Dates")
     nom_client = st.text_input("Nom du Client")
-    col_d1, col_d2 = st.columns(2)
-    with col_d1:
-        d_debut = st.date_input("Du", value=date(2026, 2, 25))
-    with col_d2:
-        d_fin = st.date_input("Au", value=date(2026, 2, 28))
-    
+    c1, c2 = st.columns(2)
+    d_deb = c1.date_input("Du", value=date(2026, 2, 25))
+    d_fin = c2.date_input("Au", value=date(2026, 2, 28))
     pax = st.number_input("Nombre de Pax", min_value=1, value=2)
     jours = st.number_input("Nombre de Jours", min_value=1, value=1)
     marge = st.slider("Marge bénéficiaire (%)", 0, 100, 20)
@@ -192,50 +181,25 @@ with col3:
         if st.checkbox(s, key=f"v_{s}"):
             items_facture.append((f"{s}", 1, p * jours))
             total_brut += p * jours
-    
     if st.checkbox("Porteur"):
         nb_p = st.number_input("Nombre de porteurs", min_value=1, value=1)
-        # Calcul : Prix * Nombre porteur * Jours
         m_p = data_c["porteur_par_j_pers"] * nb_p * jours
         items_facture.append((f"Porteur ({nb_p})", nb_p, m_p))
         total_brut += m_p
-
     if st.checkbox("Carburant"):
-        p_c = data_c["fixes"]["Carburant"]
-        items_facture.append(("Carburant", 1, p_c))
-        total_brut += p_c
-
-# --- GÉNÉRATION ---
-st.divider()
-total_marge_ar = total_brut * (1 + marge/100)
-st.metric("Total estimé", f"{total_marge_ar:,.0f} Ar")
+        items_facture.append(("Carburant", 1, data_c["fixes"]["Carburant"]))
+        total_brut += data_c["fixes"]["Carburant"]
 
 if st.button("💾 GÉNÉRER LA FACTURE A5"):
     if not nom_client:
-        st.error("Veuillez saisir le nom du client.")
+        st.error("Nom du client requis.")
     else:
-        try:
-            doc_data = {
-                "ref": f"LMT-{datetime.now().strftime('%y%m%d%H%M')}",
-                "date": datetime.now().strftime("%d/%m/%Y"),
-                "client": nom_client,
-                "pax": pax,
-                "jours": jours,
-                "d_deb": d_debut, "d_fin": d_fin,
-                "items": items_facture,
-                "total_ar": total_brut,
-                "marge": marge
-            }
-            
-            # Appel de la fonction et conversion forcée
-            pdf_output = generate_invoice_a5(doc_data)
-            
-            st.download_button(
-                label="📥 Télécharger la Facture PDF",
-                data=pdf_output,
-                file_name=f"Facture_{nom_client}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf"
-            )
-            st.success("Facture générée avec succès !")
-        except Exception as e:
-            st.error(f"Erreur lors de la génération : {str(e)}")
+        doc_data = {
+            "ref": f"LMT-{datetime.now().strftime('%y%m%d%H%M')}",
+            "date": datetime.now().strftime("%d/%m/%Y"),
+            "client": nom_client, "pax": pax, "jours": jours,
+            "d_deb": d_deb, "d_fin": d_fin,
+            "items": items_facture, "total_ar": total_brut, "marge": marge
+        }
+        pdf_bytes = generate_invoice_a5(doc_data)
+        st.download_button("📥 Télécharger PDF", pdf_bytes, f"Facture_{nom_client}.pdf", "application/pdf")
