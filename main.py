@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 from fpdf import FPDF
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import qrcode
 
 # ==========================================
@@ -53,7 +53,7 @@ TARIFS = {
 class PDF_A4(FPDF):
     def header(self):
         if os.path.exists("logo.png"):
-            self.image("logo.png", x=90, y=10, w=30) # Centré sur A4
+            self.image("logo.png", x=90, y=10, w=30)
             self.ln(25)
         self.set_font("Helvetica", 'B', 16)
         self.cell(0, 10, "LEMUR MACACO TOURS SARL", ln=True, align='C')
@@ -77,7 +77,6 @@ def generate_invoice_a4(data):
     pdf = PDF_A4(orientation='P', unit='mm', format='A4')
     pdf.add_page()
     
-    # En-tête Facture
     pdf.set_font("Helvetica", 'B', 12)
     pdf.cell(0, 10, f"FACTURE : {data['ref']}", ln=True)
     pdf.set_font("Helvetica", '', 11)
@@ -85,13 +84,14 @@ def generate_invoice_a4(data):
     pdf.cell(0, 7, f"Client : {data['client'].upper()}", ln=True)
     pdf.cell(0, 7, f"Nombre de Pax : {data['pax']} | Jours : {data['jours']}", ln=True)
     
-    d_deb = data['d_deb'].strftime("%d-%m-%Y")
-    d_fin = data['d_fin'].strftime("%d-%m-%Y")
+    # Format jj/mm/aaaa dans le PDF
+    d_deb = data['d_deb'].strftime("%d/%m/%Y")
+    d_fin = data['d_fin'].strftime("%d/%m/%Y")
     pdf.set_font("Helvetica", 'I', 11)
     pdf.cell(0, 7, f"Réservation : du {d_deb} au {d_fin}", ln=True)
     pdf.ln(5)
 
-    # TABLEAU - Structure regroupée
+    # TABLEAU
     pdf.set_fill_color(230, 230, 230)
     pdf.set_font("Helvetica", 'B', 10)
     pdf.cell(120, 10, " Description", border=1, fill=True)
@@ -101,7 +101,7 @@ def generate_invoice_a4(data):
 
     pdf.set_font("Helvetica", '', 10)
     
-    # --- Bloc SITES REGROUPÉS ---
+    # Bloc SITES
     sites_sel = [i for i in data['items'] if "Entree" in i[0]]
     if sites_sel:
         noms_sites = "-".join([i[0].replace("Entree ", "") for i in sites_sel])
@@ -115,7 +115,7 @@ def generate_invoice_a4(data):
         pdf.cell(40, h, f"{sum(i[2] for i in sites_sel):,.0f}", border=1, align='R')
         pdf.set_xy(10, end_y)
 
-    # --- Bloc GUIDES REGROUPÉS ---
+    # Bloc GUIDES
     guides_sel = [i for i in data['items'] if "Guide local" in i[0]]
     if guides_sel:
         noms_guides = "-".join([i[0].replace("Guide local ", "") for i in guides_sel])
@@ -129,7 +129,7 @@ def generate_invoice_a4(data):
         pdf.cell(40, h, f"{sum(i[2] for i in guides_sel):,.0f}", border=1, align='R')
         pdf.set_xy(10, end_y)
 
-    # --- Autres services (Logistique) ---
+    # Autres services
     pdf.set_font("Helvetica", '', 10)
     autres = [i for i in data['items'] if "Entree" not in i[0] and "Guide local" not in i[0]]
     for desc, nb, mt in autres:
@@ -138,19 +138,19 @@ def generate_invoice_a4(data):
         pdf.cell(40, 10, f"{mt:,.0f}", border=1, align='R')
         pdf.ln()
 
-    # --- TOTAUX ---
+    # TOTAUX
     total_final = data['total_ar'] * (1 + data['marge'] / 100)
     pdf.ln(5)
     pdf.set_font("Helvetica", 'B', 12)
     pdf.cell(150, 10, "TOTAL NET ", align='R')
     pdf.cell(40, 10, f"{total_final:,.0f} Ar", border=1, align='R')
     pdf.ln()
-    pdf.set_text_color(0, 0, 255) # Bleu pour l'euro
+    pdf.set_text_color(0, 0, 255) 
     pdf.cell(150, 10, "EQUIVALENT EURO ", align='R')
     pdf.cell(40, 10, f"{total_final/TAUX_AR_TO_EUR:,.2f} EUR", border=1, align='R')
     pdf.set_text_color(0, 0, 0)
 
-    # QR Code dynamique en bas à gauche sur A4
+    # QR Code
     qr_content = f"LMT-Facture: {data['ref']}\nTotal: {total_final:,.0f} Ar"
     qr = qrcode.make(qr_content)
     qr_path = "temp_qr.png"
@@ -167,17 +167,24 @@ st.title("📂 LMT - Facturation Professionnelle A4")
 with st.sidebar:
     st.header("👤 Client & Dates")
     nom_client = st.text_input("Nom du Client")
-    col_d1, col_d2 = st.columns(2)
-    d_deb = col_d1.date_input("Du", value=date.today())
-    d_fin = col_d2.date_input("Au", value=date.today())
-    pax = st.number_input("Nombre de Pax", min_value=1, value=2)
+    
     jours = st.number_input("Nombre de Jours", min_value=1, value=1)
+    
+    col_d1, col_d2 = st.columns(2)
+    # Date de début
+    d_deb = col_d1.date_input("Du", value=date.today(), format="DD/MM/YYYY")
+    
+    # CALCUL AUTOMATIQUE DE LA DATE DE FIN
+    calcul_d_fin = d_deb + timedelta(days=jours-1)
+    d_fin = col_d2.date_input("Au", value=calcul_d_fin, format="DD/MM/YYYY", disabled=True)
+    
+    pax = st.number_input("Nombre de Pax", min_value=1, value=2)
     marge = st.slider("Marge bénéficiaire (%)", 0, 100, 20)
 
 circuit_sel = st.selectbox("📍 Sélectionner le Circuit", list(TARIFS.keys()))
 data_c = TARIFS[circuit_sel]
 
-# Sélections
+# Sélections des prestations
 col1, col2, col3 = st.columns(3)
 items_facture = []
 total_brut = 0
@@ -222,16 +229,24 @@ c1.metric("Total Brut", f"{total_brut:,.0f} Ar")
 c2.metric("TOTAL NET", f"{total_avec_marge:,.0f} Ar")
 c3.metric("EURO", f"{total_avec_marge/TAUX_AR_TO_EUR:,.2f} €")
 
-if st.button("💾 GÉNÉRER LA FACTURE A4"):
-    if not nom_client:
-        st.error("Nom du client requis.")
-    else:
-        doc_data = {
-            "ref": f"LMT-{datetime.now().strftime('%y%m%d%H%M')}",
-            "date": datetime.now().strftime("%d/%m/%Y"),
-            "client": nom_client, "pax": pax, "jours": jours,
-            "d_deb": d_deb, "d_fin": d_fin,
-            "items": items_facture, "total_ar": total_brut, "marge": marge
-        }
-        pdf_bytes = generate_invoice_a4(doc_data)
-        st.download_button("📥 Télécharger PDF A4", pdf_bytes, f"Facture_{nom_client}_A4.pdf")
+# Zone des boutons côte à côte
+btn_col1, btn_col2 = st.columns([1, 4])
+
+with btn_col1:
+    if st.button("🔄 Nouvelle Facture"):
+        st.rerun()
+
+with btn_col2:
+    if st.button("💾 GÉNÉRER LA FACTURE A4"):
+        if not nom_client:
+            st.error("Nom du client requis.")
+        else:
+            doc_data = {
+                "ref": f"LMT-{datetime.now().strftime('%y%m%d%H%M')}",
+                "date": datetime.now().strftime("%d/%m/%Y"),
+                "client": nom_client, "pax": pax, "jours": jours,
+                "d_deb": d_deb, "d_fin": calcul_d_fin, # Utilise la date calculée
+                "items": items_facture, "total_ar": total_brut, "marge": marge
+            }
+            pdf_bytes = generate_invoice_a4(doc_data)
+            st.download_button("📥 Télécharger PDF A4", pdf_bytes, f"Facture_{nom_client}_A4.pdf")
